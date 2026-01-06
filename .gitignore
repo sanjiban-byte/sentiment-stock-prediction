@@ -1,0 +1,22 @@
+# Environment & secrets
+.env
+api_keys.py
+
+# Data files
+*.db
+*.parquet
+*.h5
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual environment
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
