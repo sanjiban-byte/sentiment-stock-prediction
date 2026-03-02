@@ -13,11 +13,11 @@ Financial markets are influenced by both numerical price behavior and qualitativ
 
 This project aims to bridge that gap by:
 
-Extracting sentiment signals from financial news using a domain-specific transformer model.
+1. Extracting sentiment signals from financial news using a domain-specific transformer model.
 
-Modeling sequential dependencies in stock prices using LSTM networks.
+2. Modeling sequential dependencies in stock prices using LSTM networks.
 
-Combining both signals into a coherent trading decision framework.
+3. Combining both signals into a coherent trading decision framework.
 
 The emphasis is not only on predictive modeling but also on architectural consistency, modularity, and system integration.
 
@@ -39,15 +39,15 @@ Multiple articles for a stock are aggregated into a single daily sentiment signa
 
 Historical market data (OHLCV) is retrieved using Yahoo Finance. From this raw data, several technical features are computed:
 
-Log returns
+(a). Log returns
 
-Rolling volatility
+(b). Rolling volatility
 
-Relative Strength Index (RSI)
+(c). Relative Strength Index (RSI)
 
-Moving Average Convergence Divergence (MACD)
+(d). Moving Average Convergence Divergence (MACD)
 
-Trading volume
+(e). Trading volume
 
 These indicators capture momentum, mean reversion, volatility regimes, and liquidity characteristics of the stock.
 
@@ -80,9 +80,7 @@ Model weights are saved using PyTorch checkpoints (.pth) and reloaded during the
 The LSTM outputs a predicted next-day return. However, predictions alone do not constitute a trading strategy. A sentiment-weighted decision rule is applied:
 
 BUY if predicted return is positive and sentiment is strongly positive.
-
 SELL if predicted return is negative and sentiment is strongly negative.
-
 HOLD otherwise.
 
 This alignment constraint reduces false signals by requiring agreement between technical momentum and market sentiment.
@@ -91,39 +89,21 @@ This alignment constraint reduces false signals by requiring agreement between t
 
 The integrated system performs the following operations:
 
-Fetch one year of historical price data.
+(a) Fetch one year of historical price data.
 
-Compute technical indicators.
+(b) Compute technical indicators.
 
-Retrieve recent news articles.
+(c) Retrieve recent news articles.
 
-Compute aggregated sentiment using FinBERT.
+(d) Compute aggregated sentiment using FinBERT.
 
-Construct a 60-day feature sequence.
+(e) Construct a 60-day feature sequence.
 
-Run LSTM inference to predict next-day return.
+(f) Run LSTM inference to predict next-day return.
 
-Apply sentiment-weighted trading logic.
-
-Generate a structured report per stock.
+(g) Apply sentiment-weighted trading logic.
 
 The final output is a clear and interpretable decision table containing predicted return, sentiment score, and recommended action.
 
-Engineering Considerations
 
-Several non-trivial engineering challenges were addressed during development:
-
-Handling transformer token length limits (512 tokens).
-
-Aggregating multiple news articles into a coherent daily sentiment signal.
-
-Managing feature-dimension consistency between training and inference.
-
-Saving and reloading PyTorch model weights without architectural mismatch.
-
-Resolving input dimensionality errors during integration.
-
-Designing a modular structure separating data ingestion, modeling, and decision logic.
-
-The LSTM model was initially trained on a synthetic feature space to validate architectural correctness and checkpoint handling before integrating real market data. During final integration, a dummy feature was appended to maintain compatibility with the trained architecture while mapping real financial features into the expected input space.
 
