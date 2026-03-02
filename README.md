@@ -1,4 +1,5 @@
 Sentiment-Driven Stock Prediction
+
 Overview
 
 This project presents an end-to-end quantitative trading prototype that integrates financial news sentiment analysis with deep learning-based time series forecasting. The objective is to explore whether combining qualitative information extracted from financial text with quantitative market indicators can improve directional stock prediction.
