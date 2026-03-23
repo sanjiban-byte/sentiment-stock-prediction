@@ -1,110 +1,159 @@
-Sentiment-Driven Stock Prediction
+# Sentiment-Driven Stock Prediction
 
-Overview
+An end-to-end quantitative trading prototype that integrates financial news sentiment analysis with deep learning-based time series forecasting to generate daily equity trading signals.
 
-This project presents an end-to-end quantitative trading prototype that integrates financial news sentiment analysis with deep learning-based time series forecasting. The objective is to explore whether combining qualitative information extracted from financial text with quantitative market indicators can improve directional stock prediction.
+---
 
-The system leverages a transformer-based language model (FinBERT) to extract domain-specific sentiment from financial news and integrates it with a sequence-based Long Short-Term Memory (LSTM) network trained on historical price dynamics. The final output is a structured trading signal (BUY / SELL / HOLD) derived from both predicted return momentum and sentiment alignment.
+## Overview
 
-This project demonstrates the integration of natural language processing, time series modeling, and algorithmic decision logic within a modular and extensible pipeline.
+This project builds a complete pipeline that combines two sources of information: qualitative sentiment extracted from financial news, and quantitative patterns learned from historical price data.
 
-Problem Motivation
+FinBERT, a transformer model fine-tuned on financial text, scores the sentiment of recent news articles for a given stock. These scores are combined with technical indicators derived from historical OHLCV data and fed into a multi-layer LSTM network that predicts the next-day log return. The predicted return and sentiment score are then passed through a signal layer that outputs a BUY, SELL, or HOLD recommendation.
 
-Financial markets are influenced by both numerical price behavior and qualitative market perception. Traditional quantitative models rely solely on price-derived indicators, while news-driven models often ignore temporal price structure.
+The project demonstrates the integration of natural language processing, time series modelling, feature engineering, and algorithmic decision logic within a modular and reproducible pipeline.
 
-This project aims to bridge that gap by:
+---
 
-1. Extracting sentiment signals from financial news using a domain-specific transformer model.
+## Problem Motivation
 
-2. Modeling sequential dependencies in stock prices using LSTM networks.
+Financial markets are influenced by both numerical price behaviour and qualitative market perception. Traditional quantitative models rely solely on price-derived indicators, while news-driven approaches often ignore temporal price structure. This project bridges that gap.
 
-3. Combining both signals into a coherent trading decision framework.
+The three core objectives are:
 
-The emphasis is not only on predictive modeling but also on architectural consistency, modularity, and system integration.
+1. Extract sentiment signals from financial news using a domain-specific transformer model trained on financial vocabulary.
+2. Model sequential dependencies in stock prices using an LSTM that treats the previous 60 trading days as a context window.
+3. Combine both signals into a trading decision framework with interpretable outputs and honest evaluation metrics.
 
-System Architecture
+---
 
-The pipeline consists of five interconnected stages:
+## System Architecture
 
-1. Financial News Acquisition and Sentiment Modeling
+The pipeline consists of five interconnected stages.
 
-Recent financial news articles are fetched using NewsAPI. These articles are processed using the FinBERT transformer model (ProsusAI/finbert), which is specifically fine-tuned for financial sentiment classification.
+### 1. Financial News Acquisition and Sentiment Modelling
 
-Each article is tokenized and truncated to respect the 512-token transformer constraint. Model logits are converted into class probabilities (positive, neutral, negative), and a scalar sentiment score is computed as:
+Recent financial news articles are fetched using the NewsAPI client. These articles are processed using FinBERT (ProsusAI/finbert), a BERT model fine-tuned on approximately 10,000 financial news sentences from Reuters.
 
-Sentiment Score = P(Positive) − P(Negative)
+Long documents are split into 512-token chunks before tokenisation to avoid silent truncation. Each chunk is scored independently and scores are averaged to produce a single scalar per stock per day:
 
-Multiple articles for a stock are aggregated into a single daily sentiment signal, ensuring a robust representation of current market perception.
+```
+Sentiment Score = mean( P(positive) - P(negative) )  across all chunks
+```
 
-2. Market Data Processing and Feature Engineering
+Daily sentiment scores are cached to a CSV file so the FinBERT inference pass runs only once per stock. On subsequent runs the cache is loaded directly.
 
-Historical market data (OHLCV) is retrieved using Yahoo Finance. From this raw data, several technical features are computed:
+### 2. Market Data Processing and Feature Engineering
 
-(a). Log returns
+Historical OHLCV data is retrieved from Yahoo Finance. Seven features are computed:
 
-(b). Rolling volatility
+| Feature | Description |
+|---|---|
+| Return | Log return: ln(Close_t / Close_{t-1}). Used as both prediction target and feature. |
+| Volatility | Rolling 10-day standard deviation of log returns. Captures uncertainty regime. |
+| RSI | Relative Strength Index over 14 days. Captures overbought and oversold conditions. |
+| MACD | Difference between 12-day and 26-day exponential moving averages. Captures trend momentum. |
+| Volume | Raw daily trading volume. Captures liquidity and conviction behind price moves. |
+| Sentiment | Daily FinBERT score merged from the news cache. Zero-filled for days without coverage. |
+| VWAP_Dev | Deviation of closing price from the 20-day rolling VWAP. Captures mean-reversion pressure. |
 
-(c). Relative Strength Index (RSI)
+All seven features are standardised using a StandardScaler fitted exclusively on the training partition. The fitted scaler is persisted to disk and reloaded at inference time to ensure consistent feature distributions between training and prediction.
 
-(d). Moving Average Convergence Divergence (MACD)
+### 3. Sequence Modelling Using LSTM
 
-(e). Trading volume
+A two-layer LSTM with 64 hidden units processes a sliding window of 60 trading days. Key details:
 
-These indicators capture momentum, mean reversion, volatility regimes, and liquidity characteristics of the stock.
+| Parameter | Value |
+|---|---|
+| Input dimension | 7 features per time step |
+| Hidden dimension | 64 units |
+| Number of layers | 2 (stacked LSTM) |
+| Sequence length | 60 trading days |
+| Loss function | Mean Squared Error |
+| Optimiser | Adam, learning rate 1e-3 |
+| Gradient clipping | Max norm 1.0 |
 
-The sentiment score derived from FinBERT is then incorporated into the feature space, enabling multimodal fusion of textual and numerical information.
+Model weights are saved at the epoch of best validation loss and reloaded at inference time.
 
-3. Sequence Modeling using LSTM
+### 4. Integration of Sentiment and Momentum
 
-Stock price dynamics are inherently sequential. To capture temporal dependencies, a multi-layer LSTM architecture is employed.
+The LSTM outputs a predicted next-day log return. A sentiment-weighted signal rule is then applied:
 
-Key architectural details:
+```
+BUY   if predicted_return > 0.001  and  sentiment_score > 0.2
+SELL  if predicted_return < -0.001 and  sentiment_score < -0.2
+HOLD  otherwise
+```
 
-Input dimension: 7 features
+Requiring agreement between the technical and sentiment signals before taking a directional position reduces false signals that arise from either source alone.
 
-Hidden dimension: 64 units
+### 5. End-to-End Inference
 
-Number of layers: 2
+The inference notebook (final.ipynb) performs the following steps for each stock:
 
-Sequence length: 60 trading days
+1. Download two years of historical price data.
+2. Compute all seven features.
+3. Fetch recent news and compute today's sentiment score using chunked FinBERT.
+4. Apply the training scaler to the feature matrix.
+5. Construct a 60-day sequence and run LSTM inference.
+6. Apply the signal rule.
+7. Output a report with predicted return, sentiment score, article count, and recommended action.
 
-Loss function: Mean Squared Error
+---
 
-Optimizer: Adam
+## Training and Evaluation
 
-A sliding window approach converts the time series into supervised learning samples, where the model learns to predict the next-day return from the previous 60 days of multivariate features.
+### Data Split
 
-Model weights are saved using PyTorch checkpoints (.pth) and reloaded during the integration phase, ensuring reproducibility and architectural consistency.
+The dataset is split temporally into training (70%), validation (15%), and test (15%) partitions in strict chronological order. No shuffling is applied at any stage. This prevents any form of look-ahead bias where the model could implicitly observe future data during training.
 
-4. Integration of Sentiment and Momentum
+### Evaluation Metrics
 
-The LSTM outputs a predicted next-day return. However, predictions alone do not constitute a trading strategy. A sentiment-weighted decision rule is applied:
+Model performance is reported using two metrics meaningful in a trading context:
 
-BUY if predicted return is positive and sentiment is strongly positive.
-SELL if predicted return is negative and sentiment is strongly negative.
-HOLD otherwise.
+**Directional Accuracy** measures the fraction of test days where the predicted direction of return matches the actual direction. A naive baseline predicts the majority class and typically scores near 50 percent. Anything above 55 percent is considered informative.
 
-This alignment constraint reduces false signals by requiring agreement between technical momentum and market sentiment.
+**Paper-Trade Sharpe** is the annualised Sharpe ratio of a paper portfolio that goes long when the predicted return exceeds the threshold, short when it falls below the negative threshold, and flat otherwise. A Sharpe above 1.0 is considered good.
 
-5. End-to-End Inference Pipeline
+MSE is tracked during training for optimisation but is not the primary evaluation criterion, since directional accuracy is more relevant than magnitude accuracy for a trading signal.
 
-The integrated system performs the following operations:
+---
 
-(a) Fetch one year of historical price data.
+## Default Stock Watchlist
 
-(b) Compute technical indicators.
+| Ticker | Company | Sector |
+|---|---|---|
+| AAPL | Apple Inc. | Technology |
+| MSFT | Microsoft Corporation | Technology |
+| GOOGL | Alphabet Inc. | Technology |
+| NVDA | NVIDIA Corporation | Semiconductors |
+| TSLA | Tesla Inc. | Automotive / Clean Energy |
 
-(c) Retrieve recent news articles.
+The watchlist can be modified by editing the `STOCKS` dictionary in `final.ipynb`.
 
-(d) Compute aggregated sentiment using FinBERT.
+---
 
-(e) Construct a 60-day feature sequence.
+## Known Limitations
 
-(f) Run LSTM inference to predict next-day return.
+**Sentiment coverage is sparse during training.** Due to the NewsAPI free-tier 30-day window, the model trains primarily on price features and implicitly learns to down-weight sentiment.
 
-(g) Apply sentiment-weighted trading logic.
+**Signal thresholds are fixed.** The values of 0.001 for return and 0.2 for sentiment are reasonable defaults but have not been tuned. These should be swept on the validation set and selected to maximise the paper-trade Sharpe.
 
-The final output is a clear and interpretable decision table containing predicted return, sentiment score, and recommended action.
+**Single-stock training.** The model is trained independently for one stock (AAPL by default). Generalisation to other tickers without retraining has not been evaluated.
 
+**No transaction costs.** The paper-trade Sharpe is a gross estimate before execution frictions, slippage, or position sizing constraints.
 
+---
 
+## Key Dependencies
+
+| Package | Purpose |
+|---|---|
+| torch | LSTM model training and inference. |
+| transformers | FinBERT tokeniser and sequence classification model. |
+| yfinance | Yahoo Finance wrapper for historical OHLCV data. |
+| newsapi-python | NewsAPI client for fetching financial news articles. |
+| scikit-learn | StandardScaler for feature normalisation. |
+| pandas | Data manipulation and time series alignment. |
+| numpy | Numerical computation. |
+| matplotlib | Training curves and equity chart visualisation. |
+| scipy | Softmax computation for FinBERT output probabilities. |
